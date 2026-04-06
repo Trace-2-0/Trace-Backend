@@ -1,0 +1,888 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "Company": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "passwordHash": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string",
+          "default": "trial"
+        },
+        "trialStartsAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "trialEndsAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "isActive": {
+          "type": "boolean",
+          "default": true
+        },
+        "suspendedReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maxEmployees": {
+          "type": "integer",
+          "default": 10
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "settings": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CompanySettings"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "storageConfig": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StorageConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Team"
+          }
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/User"
+          }
+        },
+        "shifts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Shift"
+          }
+        },
+        "breaks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Break"
+          }
+        },
+        "idleSessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/IdleSession"
+          }
+        },
+        "screenshots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Screenshot"
+          }
+        },
+        "dailyAppUsage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DailyAppUsage"
+          }
+        },
+        "appTags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AppTag"
+          }
+        },
+        "subscription": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Subscription"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "paymentEvents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PaymentEvent"
+          }
+        },
+        "auditLogs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/AuditLog"
+          }
+        }
+      }
+    },
+    "CompanySettings": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "expectedWorkSecs": {
+          "type": "integer",
+          "default": 28800
+        },
+        "expectedActiveSecs": {
+          "type": "integer",
+          "default": 21600
+        },
+        "maxBreaksPerShift": {
+          "type": "integer",
+          "default": 3
+        },
+        "maxBreakDurationSecs": {
+          "type": "integer",
+          "default": 1800
+        },
+        "lateThresholdTime": {
+          "type": "string",
+          "default": "09:30"
+        },
+        "screenshotIntervalSecs": {
+          "type": "integer",
+          "default": 300
+        },
+        "heartbeatGraceSecs": {
+          "type": "integer",
+          "default": 5400
+        },
+        "blurScreenshotsOnBreak": {
+          "type": "boolean",
+          "default": false
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        }
+      }
+    },
+    "StorageConfig": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "storageType": {
+          "type": "string",
+          "default": "r2"
+        },
+        "r2BucketName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "oauthAccessToken": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "oauthRefreshToken": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "oauthTokenExpiresAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "driveRootFolderId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "isConnected": {
+          "type": "boolean",
+          "default": false
+        },
+        "connectedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        }
+      }
+    },
+    "Team": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "idleThresholdSecs": {
+          "type": "integer",
+          "default": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/User"
+          }
+        }
+      }
+    },
+    "User": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "teamId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "email": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "passwordHash": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "default": "employee"
+        },
+        "isActive": {
+          "type": "boolean",
+          "default": true
+        },
+        "deactivatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "agentToken": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Team"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shifts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Shift"
+          }
+        },
+        "screenshots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Screenshot"
+          }
+        },
+        "dailyAppUsage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DailyAppUsage"
+          }
+        }
+      }
+    },
+    "Shift": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "isLate": {
+          "type": "boolean",
+          "default": false
+        },
+        "deviceOs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checkoutType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checkoutReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastHeartbeatAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "disconnectAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "graceAppliedSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "timeAdjustmentSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "totalWorkSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "totalActiveSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "totalBreakSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "totalIdleSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "overtimeSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        },
+        "user": {
+          "$ref": "#/definitions/User"
+        },
+        "breaks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Break"
+          }
+        },
+        "idleSessions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/IdleSession"
+          }
+        },
+        "screenshots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Screenshot"
+          }
+        }
+      }
+    },
+    "Break": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "shiftId": {
+          "type": "string"
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "durationSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        },
+        "shift": {
+          "$ref": "#/definitions/Shift"
+        }
+      }
+    },
+    "IdleSession": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "shiftId": {
+          "type": "string"
+        },
+        "startTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationSecs": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        },
+        "shift": {
+          "$ref": "#/definitions/Shift"
+        }
+      }
+    },
+    "Screenshot": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "shiftId": {
+          "type": "string"
+        },
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "receivedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "storageType": {
+          "type": "string"
+        },
+        "storageKey": {
+          "type": "string"
+        },
+        "fileSizeBytes": {
+          "type": "integer",
+          "default": 0
+        },
+        "status": {
+          "type": "string",
+          "default": "ok"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        },
+        "user": {
+          "$ref": "#/definitions/User"
+        },
+        "shift": {
+          "$ref": "#/definitions/Shift"
+        }
+      }
+    },
+    "DailyAppUsage": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "activeSecs": {
+          "type": "integer",
+          "default": 0
+        },
+        "tag": {
+          "type": "string",
+          "default": "neutral"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        },
+        "user": {
+          "$ref": "#/definitions/User"
+        }
+      }
+    },
+    "AppTag": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "appName": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        }
+      }
+    },
+    "Subscription": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "plan": {
+          "type": "string"
+        },
+        "razorpaySubId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "default": "active"
+        },
+        "currentPeriodStart": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "currentPeriodEnd": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "paymentFailedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "gracePeriodEnds": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "cancelledAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        }
+      }
+    },
+    "PaymentEvent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "eventType": {
+          "type": "string"
+        },
+        "amountPaise": {
+          "type": "integer"
+        },
+        "razorpayPaymentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "upiRef": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        }
+      }
+    },
+    "AuditLog": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "companyId": {
+          "type": "string"
+        },
+        "actorId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "actorType": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string"
+        },
+        "targetId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targetType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "meta": {
+          "type": [
+            "number",
+            "string",
+            "boolean",
+            "object",
+            "array",
+            "null"
+          ]
+        },
+        "serverTime": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "company": {
+          "$ref": "#/definitions/Company"
+        }
+      }
+    }
+  },
+  "type": "object",
+  "properties": {
+    "company": {
+      "$ref": "#/definitions/Company"
+    },
+    "companySettings": {
+      "$ref": "#/definitions/CompanySettings"
+    },
+    "storageConfig": {
+      "$ref": "#/definitions/StorageConfig"
+    },
+    "team": {
+      "$ref": "#/definitions/Team"
+    },
+    "user": {
+      "$ref": "#/definitions/User"
+    },
+    "shift": {
+      "$ref": "#/definitions/Shift"
+    },
+    "break": {
+      "$ref": "#/definitions/Break"
+    },
+    "idleSession": {
+      "$ref": "#/definitions/IdleSession"
+    },
+    "screenshot": {
+      "$ref": "#/definitions/Screenshot"
+    },
+    "dailyAppUsage": {
+      "$ref": "#/definitions/DailyAppUsage"
+    },
+    "appTag": {
+      "$ref": "#/definitions/AppTag"
+    },
+    "subscription": {
+      "$ref": "#/definitions/Subscription"
+    },
+    "paymentEvent": {
+      "$ref": "#/definitions/PaymentEvent"
+    },
+    "auditLog": {
+      "$ref": "#/definitions/AuditLog"
+    }
+  }
+}

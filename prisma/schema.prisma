@@ -1,0 +1,339 @@
+// ============================================================
+// Trace 1.0 – Multi-Tenant Prisma Schema
+// Database: PostgreSQL (Supabase)
+// Hierarchy: Company → Team → User
+// Every table (except Company) carries companyId for tenant isolation
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator jsonSchema {
+  provider = "prisma-json-schema-generator"
+  output   = "../src/schemas"
+  keepRelationScalarFields = "true"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ────────────────────────────────────────────────────────────
+// 1. COMPANY  (tenant root)
+// ────────────────────────────────────────────────────────────
+model Company {
+  id              String   @id @default(cuid())
+  slug            String   @unique
+  name            String
+  email           String   @unique
+  passwordHash    String
+  plan            String   @default("trial") // trial | starter | pro | suspended | cancelled
+  trialStartsAt   DateTime @default(now()) @db.Timestamptz
+  trialEndsAt     DateTime @db.Timestamptz
+  isActive        Boolean  @default(true)
+  suspendedReason String? // trial_expired | payment_failed | manual
+  maxEmployees    Int      @default(10)
+  createdAt       DateTime @default(now()) @db.Timestamptz
+
+  // ── relations ──
+  settings      CompanySettings?
+  storageConfig StorageConfig?
+  teams         Team[]
+  users         User[]
+  shifts        Shift[]
+  breaks        Break[]
+  idleSessions  IdleSession[]
+  screenshots   Screenshot[]
+  dailyAppUsage DailyAppUsage[]
+  appTags       AppTag[]
+  subscription  Subscription?
+  paymentEvents PaymentEvent[]
+  auditLogs     AuditLog[]
+
+  @@map("companies")
+}
+
+// ────────────────────────────────────────────────────────────
+// 2. COMPANY SETTINGS  (1-to-1 with Company)
+// ────────────────────────────────────────────────────────────
+model CompanySettings {
+  id                     String   @id @default(cuid())
+  companyId              String   @unique
+  expectedWorkSecs       Int      @default(28800) // 8 hours
+  expectedActiveSecs     Int      @default(21600) // 6 hours
+  maxBreaksPerShift      Int      @default(3)
+  maxBreakDurationSecs   Int      @default(1800) // 30 mins
+  lateThresholdTime      String   @default("09:30") // HH:MM format
+  screenshotIntervalSecs Int      @default(300) // 5 mins
+  heartbeatGraceSecs     Int      @default(5400) // 90 mins – auto clock-out
+  blurScreenshotsOnBreak Boolean  @default(false)
+  updatedAt              DateTime @updatedAt @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_settings")
+}
+
+// ────────────────────────────────────────────────────────────
+// 3. STORAGE CONFIG  (1-to-1 with Company)
+//    oauthAccessToken & oauthRefreshToken MUST be encrypted
+//    at the application level before persisting.
+// ────────────────────────────────────────────────────────────
+model StorageConfig {
+  id                  String    @id @default(cuid())
+  companyId           String    @unique
+  storageType         String    @default("r2") // r2 | onedrive | googledrive
+  r2BucketName        String?
+  oauthAccessToken    String? // ⚠ encrypt before storing
+  oauthRefreshToken   String? // ⚠ encrypt before storing
+  oauthTokenExpiresAt DateTime? @db.Timestamptz
+  driveRootFolderId   String?
+  isConnected         Boolean   @default(false)
+  connectedAt         DateTime? @db.Timestamptz
+  updatedAt           DateTime  @updatedAt @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("storage_configs")
+}
+
+// ────────────────────────────────────────────────────────────
+// 4. TEAM
+// ────────────────────────────────────────────────────────────
+model Team {
+  id                String   @id @default(cuid())
+  companyId         String
+  name              String // e.g. "Tech", "Editors", "Sales"
+  idleThresholdSecs Int      @default(300) // team-level: Tech=60s, Editors=600s
+  createdAt         DateTime @default(now()) @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users   User[]
+
+  @@map("teams")
+}
+
+// ────────────────────────────────────────────────────────────
+// 5. USER
+// ────────────────────────────────────────────────────────────
+model User {
+  id            String    @id @default(cuid())
+  companyId     String
+  teamId        String?
+  email         String
+  name          String
+  passwordHash  String
+  role          String    @default("employee") // admin | manager | employee
+  isActive      Boolean   @default(true) // false = left company, data kept
+  deactivatedAt DateTime? @db.Timestamptz
+  agentToken    String    @unique // Electron agent auth (not JWT)
+  createdAt     DateTime  @default(now()) @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @db.Timestamptz
+
+  company       Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  team          Team?           @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  shifts        Shift[]
+  screenshots   Screenshot[]
+  dailyAppUsage DailyAppUsage[]
+
+  @@unique([companyId, email]) // same email allowed across different companies
+  @@map("users")
+}
+
+// ────────────────────────────────────────────────────────────
+// 6. SHIFT
+// ────────────────────────────────────────────────────────────
+model Shift {
+  id                 String    @id @default(cuid())
+  companyId          String
+  userId             String
+  date               DateTime  @db.Date // date-only for fast daily queries
+  startTime          DateTime  @db.Timestamptz // clock-in
+  endTime            DateTime? @db.Timestamptz // null = ongoing
+  isLate             Boolean   @default(false)
+  deviceOs           String? // "windows" | "linux"
+  checkoutType       String? // manual | heartbeat_timeout | shutdown | powercut | auto_idle
+  checkoutReason     String?
+  lastHeartbeatAt    DateTime? @db.Timestamptz
+  disconnectAt       DateTime? @db.Timestamptz
+  graceAppliedSecs   Int       @default(0)
+  timeAdjustmentSecs Int       @default(0) // manual admin correction
+  totalWorkSecs      Int       @default(0)
+  totalActiveSecs    Int       @default(0) // work - idle - breaks
+  totalBreakSecs     Int       @default(0)
+  totalIdleSecs      Int       @default(0)
+  overtimeSecs       Int       @default(0) // totalWork - expectedWork
+  createdAt          DateTime  @default(now()) @db.Timestamptz
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  breaks       Break[]
+  idleSessions IdleSession[]
+  screenshots  Screenshot[]
+
+  @@index([companyId, date])
+  @@index([userId, date])
+  @@map("shifts")
+}
+
+// ────────────────────────────────────────────────────────────
+// 7. BREAK
+// ────────────────────────────────────────────────────────────
+model Break {
+  id           String    @id @default(cuid())
+  companyId    String
+  shiftId      String
+  startTime    DateTime  @db.Timestamptz
+  endTime      DateTime? @db.Timestamptz
+  durationSecs Int       @default(0) // stored on break end
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shift   Shift   @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@map("breaks")
+}
+
+// ────────────────────────────────────────────────────────────
+// 8. IDLE SESSION
+// ────────────────────────────────────────────────────────────
+model IdleSession {
+  id           String   @id @default(cuid())
+  companyId    String
+  shiftId      String
+  startTime    DateTime @db.Timestamptz // backtracked via powerMonitor
+  endTime      DateTime @db.Timestamptz
+  durationSecs Int
+  createdAt    DateTime @default(now()) @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  shift   Shift   @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@map("idle_sessions")
+}
+
+// ────────────────────────────────────────────────────────────
+// 9. SCREENSHOT
+// ────────────────────────────────────────────────────────────
+model Screenshot {
+  id            String   @id @default(cuid())
+  companyId     String
+  userId        String
+  shiftId       String
+  capturedAt    DateTime @db.Timestamptz // agent-reported time
+  receivedAt    DateTime @default(now()) @db.Timestamptz // server receipt time
+  storageType   String // r2 | onedrive | googledrive
+  storageKey    String // R2: {companyId}/{userId}/{date}/{HH-mm}.jpg | Drive: file ID
+  fileSizeBytes Int      @default(0)
+  status        String   @default("ok") // ok | failed | blurred | skipped_break
+  failureReason String?
+  createdAt     DateTime @default(now()) @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shift   Shift   @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  @@index([userId, capturedAt])
+  @@index([companyId, capturedAt])
+  @@map("screenshots")
+}
+
+// ────────────────────────────────────────────────────────────
+// 10. DAILY APP USAGE
+// ────────────────────────────────────────────────────────────
+model DailyAppUsage {
+  id         String   @id @default(cuid())
+  companyId  String
+  userId     String
+  date       DateTime @db.Date
+  appName    String // foreground app only
+  activeSecs Int      @default(0)
+  tag        String   @default("neutral") // productive | unproductive | neutral
+  // copied from AppTag at upsert – no join needed
+  updatedAt  DateTime @updatedAt @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId, appName, date])
+  @@index([companyId, date])
+  @@map("daily_app_usage")
+}
+
+// ────────────────────────────────────────────────────────────
+// 11. APP TAG
+// ────────────────────────────────────────────────────────────
+model AppTag {
+  id        String   @id @default(cuid())
+  companyId String
+  appName   String
+  tag       String // productive | unproductive | neutral
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, appName])
+  @@map("app_tags")
+}
+
+// ────────────────────────────────────────────────────────────
+// 12. SUBSCRIPTION  (1-to-1 with Company)
+// ────────────────────────────────────────────────────────────
+model Subscription {
+  id                 String    @id @default(cuid())
+  companyId          String    @unique // one subscription per company
+  plan               String // starter | pro
+  razorpaySubId      String? // null for manual UPI clients
+  status             String    @default("active") // active | past_due | cancelled | paused
+  currentPeriodStart DateTime  @db.Timestamptz
+  currentPeriodEnd   DateTime  @db.Timestamptz
+  paymentFailedAt    DateTime? @db.Timestamptz
+  gracePeriodEnds    DateTime? @db.Timestamptz // paymentFailedAt + 3 days
+  cancelledAt        DateTime? @db.Timestamptz
+  createdAt          DateTime  @default(now()) @db.Timestamptz
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// ────────────────────────────────────────────────────────────
+// 13. PAYMENT EVENT  (append-only ledger)
+// ────────────────────────────────────────────────────────────
+model PaymentEvent {
+  id                String   @id @default(cuid())
+  companyId         String
+  eventType         String // charged | failed | refunded | manual_upi | trial_extended
+  amountPaise       Int // ALWAYS paise, never rupees  (₹4999 = 499900)
+  razorpayPaymentId String?
+  upiRef            String? // for manual UPI collections
+  notes             String?
+  createdAt         DateTime @default(now()) @db.Timestamptz // append-only, never update
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("payment_events")
+}
+
+// ────────────────────────────────────────────────────────────
+// 14. AUDIT LOG  (append-only, sequential BigInt PK)
+// ────────────────────────────────────────────────────────────
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  companyId  String
+  actorId    String? // userId who performed action, null if system
+  actorType  String // admin | employee | system | agent
+  action     String // e.g. shift.clock_in | screenshot.captured | plan.upgraded
+  targetId   String? // affected record ID
+  targetType String? // shift | user | screenshot | subscription | company
+  meta       Json? // flexible payload, e.g. { from: 28800, to: 32400, reason: "..." }
+  serverTime DateTime @default(now()) @db.Timestamptz // tamper-proof server timestamp
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, serverTime])
+  @@map("audit_logs")
+}
