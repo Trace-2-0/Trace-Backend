@@ -22,6 +22,8 @@ import userRoutes from './routes/user.routes';
 import settingsRoutes from './routes/settings.routes';
 import appTagRoutes from './routes/appTag.routes';
 import sseRoutes from './routes/sse.routes';
+import storageRoutes from './routes/storage.routes';
+
 
 // ─── Types ───────────────────────────────────────────────────
 import './types';
@@ -122,6 +124,8 @@ app.use('/api/users', userRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/app-tags', appTagRoutes);
 app.use('/api/sse', sseRoutes);
+app.use('/api/storage', storageRoutes);
+
 
 // ─── 404 handler ─────────────────────────────────────────────
 app.use((_req, res) => {

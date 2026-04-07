@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma';
 import { sseManager } from '../lib/sse';
 import { logAudit } from '../services/audit.service';
 import { getActiveShift, computeShiftTotals } from '../services/shift.service';
+import { uploadToR2, compressToWebP, buildStorageKey, isR2Configured } from '../services/r2.service';
 
 // ────────────────────────────────────────────────────────────
 // POST /api/agent/clock-in
@@ -333,34 +334,44 @@ export async function uploadScreenshot(req: Request, res: Response) {
 
   const activeShift = await getActiveShift(userId, companyId);
   if (!activeShift) {
-    console.log(`\n[Backend] Screenshot receive failure for user: ${userName} (No active shift)`);
+    console.log(`\n[Backend] Screenshot rejected for user: ${userName} (no active shift)`);
     res.status(400).json({ error: 'No active shift' });
     return;
   }
 
   const capturedDate = capturedAt ? new Date(capturedAt) : new Date();
-  const dateStr = capturedDate.toISOString().split('T')[0];
-  const timeStr = capturedDate
-    .toISOString()
-    .split('T')[1]
-    .replace(/[:.]/g, '-')
-    .substring(0, 8);
+  const rawBuffer = Buffer.from(imageBase64, 'base64');
 
-  const storageKey = `${companyId}/${userId}/${dateStr}/${timeStr}.jpg`;
+  let storageKey: string;
+  let storageType: string;
+  let fileSizeBytes: number;
 
-  // Save to local disk (temporary — swap with R2/cloud later)
-  const uploadDir = path.join(
-    process.cwd(),
-    'uploads',
-    companyId,
-    userId,
-    dateStr
-  );
-  await mkdir(uploadDir, { recursive: true });
+  if (isR2Configured()) {
+    // ── R2 path: compress to WebP, upload to global bucket ──
+    try {
+      const result = await uploadToR2(companyId, userId, capturedDate, rawBuffer);
+      storageKey = result.storageKey;
+      storageType = 'r2';
+      fileSizeBytes = result.fileSizeBytes;
+    } catch (r2Err: any) {
+      console.error(`[Backend] R2 upload failed for ${userName}:`, r2Err.message);
+      res.status(502).json({ error: 'Storage upload failed', detail: r2Err.message });
+      return;
+    }
+  } else {
+    // ── Local fallback: compress to WebP, save to uploads/ ──
+    console.warn('[Backend] R2 not configured — falling back to local disk storage');
+    const webpBuffer = await compressToWebP(rawBuffer);
+    storageKey = buildStorageKey(companyId, userId, capturedDate);
+    storageType = 'local';
+    fileSizeBytes = webpBuffer.length;
 
-  const buffer = Buffer.from(imageBase64, 'base64');
-  const filePath = path.join(uploadDir, `${timeStr}.jpg`);
-  await writeFile(filePath, buffer);
+    const dateStr = capturedDate.toISOString().split('T')[0];
+    const uploadDir = path.join(process.cwd(), 'uploads', companyId, userId, dateStr);
+    await mkdir(uploadDir, { recursive: true });
+    const timeStr = capturedDate.toISOString().split('T')[1].replace(/[:.]/g, '').substring(0, 6);
+    await writeFile(path.join(uploadDir, `${timeStr}.webp`), webpBuffer);
+  }
 
   const screenshot = await prisma.screenshot.create({
     data: {
@@ -368,9 +379,9 @@ export async function uploadScreenshot(req: Request, res: Response) {
       userId,
       shiftId: activeShift.id,
       capturedAt: capturedDate,
-      storageType: 'local',
+      storageType,
       storageKey,
-      fileSizeBytes: buffer.length,
+      fileSizeBytes,
       status: 'ok',
     },
   });
@@ -379,7 +390,8 @@ export async function uploadScreenshot(req: Request, res: Response) {
     userId,
     screenshotId: screenshot.id,
     capturedAt: capturedDate,
-    fileSizeBytes: buffer.length,
+    fileSizeBytes,
+    storageType,
   });
 
   logAudit({
@@ -389,6 +401,7 @@ export async function uploadScreenshot(req: Request, res: Response) {
     action: 'screenshot.captured',
     targetId: screenshot.id,
     targetType: 'screenshot',
+    meta: { storageType, fileSizeBytes },
   });
 
   res.status(201).json({
@@ -397,9 +410,10 @@ export async function uploadScreenshot(req: Request, res: Response) {
       storageKey: screenshot.storageKey,
       capturedAt: screenshot.capturedAt,
       fileSizeBytes: screenshot.fileSizeBytes,
+      storageType,
     },
   });
-  console.log(`\n[Backend] Screenshot receive successful for user: ${userName}`);
+  console.log(`\n[Backend] Screenshot saved (${storageType}) for user: ${userName} — ${fileSizeBytes} bytes`);
 }
 
 // ────────────────────────────────────────────────────────────
@@ -510,6 +524,7 @@ export async function getStatus(req: Request, res: Response) {
         maxBreaksPerShift: settings.maxBreaksPerShift,
         maxBreakDurationSecs: settings.maxBreakDurationSecs,
         expectedWorkSecs: settings.expectedWorkSecs,
+        expectedActiveSecs: settings.expectedActiveSecs,
       }
       : null,
     idleThresholdSecs,
