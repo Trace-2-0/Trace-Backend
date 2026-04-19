@@ -9,6 +9,7 @@ import {
   registerCompany,
   loginCompany,
   loginUser,
+  getAllCompanies
 } from '../controllers/auth.controller';
 
 const router = Router();
@@ -119,6 +120,21 @@ router.post(
   '/user/login',
   validate({ body: userLoginSchema }),
   loginUser
+);
+
+/**
+ * @openapi
+ * /api/auth/companies:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Retrieve all registered companies and their admins (Testing Endpoint)
+ *     responses:
+ *       200:
+ *         description: List of all companies
+ */
+router.get(
+  '/companies',
+  getAllCompanies
 );
 
 export default router;

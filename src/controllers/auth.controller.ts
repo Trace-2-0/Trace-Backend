@@ -234,3 +234,31 @@ export async function loginUser(req: Request, res: Response) {
     },
   });
 }
+
+// ────────────────────────────────────────────────────────────
+// GET /api/auth/companies
+// ────────────────────────────────────────────────────────────
+export async function getAllCompanies(req: Request, res: Response) {
+  const companies = await prisma.company.findMany({
+    select: {
+      id: true,
+      slug: true,
+      name: true,
+      email: true,
+      plan: true,
+      isActive: true,
+      createdAt: true,
+      users: {
+        where: { role: 'admin' },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+        }
+      }
+    }
+  });
+
+  res.json({ companies });
+}
+
