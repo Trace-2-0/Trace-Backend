@@ -24,6 +24,7 @@ import appTagRoutes from './routes/appTag.routes';
 import sseRoutes from './routes/sse.routes';
 import storageRoutes from './routes/storage.routes';
 import { startShiftSweep } from './cron/shiftSweep';
+import { prisma } from './lib/prisma';
 
 // ─── Types ───────────────────────────────────────────────────
 import './types';
@@ -113,6 +114,20 @@ app.get('/api/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
   });
+});
+
+// ─── Superadmin direct DB retrieve endpoint ──────────────────
+app.get('/api/superadmin/companies', async (req, res, next) => {
+  try {
+    const companies = await prisma.company.findMany({
+      include: {
+        users: true,
+      },
+    });
+    res.json(companies);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ─── Mount routes ────────────────────────────────────────────
