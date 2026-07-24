@@ -19,6 +19,7 @@ import agentRoutes from './routes/agent.routes';
 import companyRoutes from './routes/company.routes';
 import teamRoutes from './routes/team.routes';
 import userRoutes from './routes/user.routes';
+import subscriptionRoutes from './routes/subscription.routes';
 import settingsRoutes from './routes/settings.routes';
 import appTagRoutes from './routes/appTag.routes';
 import sseRoutes from './routes/sse.routes';
@@ -140,7 +141,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/app-tags', appTagRoutes);
 app.use('/api/sse', sseRoutes);
 app.use('/api/storage', storageRoutes);
-
+app.use('/api/subscription',subscriptionRoutes);
 
 // ─── 404 handler ─────────────────────────────────────────────
 app.use((_req, res) => {
