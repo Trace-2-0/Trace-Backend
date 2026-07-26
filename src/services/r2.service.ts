@@ -26,7 +26,7 @@ import sharp from 'sharp';
 //     5. Presigned URL not applicable — admin generates share link from their drive
 // ─────────────────────────────────────────────────────────────────────────────
 
-const R2_ENDPOINT   = process.env.R2_ENDPOINT   || '';  // https://<accountId>.r2.cloudflarestorage.com
+const R2_ENDPOINT   = process.env.R2_ENDPOINT   || '';  
 const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY  || '';
 const R2_SECRET_KEY = process.env.R2_SECRET_KEY  || '';
 const R2_BUCKET     = process.env.R2_BUCKET_NAME || '';
@@ -35,8 +35,7 @@ const R2_REGION     = 'auto'; // R2 always uses 'auto'
 // Presigned URL validity — 1 hour; dashboard caches until this expires
 const PRESIGNED_URL_EXPIRY_SECS = 3600;
 
-// Compression — WebP at quality 60 is visually fine for monitoring screenshots
-// Typical PNG screenshot (~800 KB) → WebP (~80–150 KB), 80–90% reduction
+
 const WEBP_QUALITY = 60;
 
 function isR2Configured(): boolean {
@@ -54,18 +53,14 @@ function createR2Client(): S3Client {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// compressToWebP
-// Converts any image buffer (PNG, JPEG, etc.) to WebP at quality 60.
-// Falls back to original buffer if sharp fails.
-// ─────────────────────────────────────────────────────────────────────────────
+// webp conversion
 export async function compressToWebP(inputBuffer: Buffer): Promise<Buffer> {
   try {
     return await sharp(inputBuffer)
       .webp({ quality: WEBP_QUALITY, effort: 4 })
       .toBuffer();
   } catch (err: any) {
-    console.warn('[R2] sharp compression failed, using original buffer:', err.message);
+    console.warn('sharp compression failed, using original buffer:', err.message);
     return inputBuffer;
   }
 }
