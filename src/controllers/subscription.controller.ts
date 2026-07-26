@@ -30,3 +30,57 @@ export const checkout = async (req: Request, res: Response) => {
         res.status(500).json({ error: "Failed to create subscription" });
     }
 };
+
+import crypto from 'crypto';
+import { handleSubscriptionSuccess } from '../services/subscription.service';
+
+export const webhook = async (req: Request, res: Response) => {
+    try {
+        const secret = process.env.RAZORPAY_WEBHOOK_SECRET as string;
+        
+        // 1. Get the signature from headers
+        const signature = req.headers['x-razorpay-signature'] as string;
+        
+        if (!signature) {
+            res.status(400).json({ error: "No signature found" });
+            return;
+        }
+
+        // 2. Verify signature
+        // Razorpay sends the JSON payload as text, we hash it and compare
+        const bodyText = JSON.stringify(req.body);
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(bodyText)
+            .digest('hex');
+
+        if (expectedSignature !== signature) {
+            res.status(400).json({ error: "Invalid signature" });
+            return;
+        }
+
+        // 3. Process the Event
+        const event = req.body.event;
+        
+        // When payment is captured successfully
+        if (event === 'payment.captured' || event === 'subscription.authenticated') {
+            const payload = req.body.payload;
+            const subscriptionId = payload.subscription?.entity?.id || payload.payment?.entity?.subscription_id;
+            const planId = payload.subscription?.entity?.plan_id;
+            const companyId = payload.subscription?.entity?.notes?.companyId;
+
+            if (companyId && subscriptionId && planId) {
+                // Here we call our BUSINESS LOGIC from the service!
+                await handleSubscriptionSuccess(companyId, subscriptionId, planId);
+                console.log(`Successfully activated subscription for company: ${companyId}`);
+            }
+        }
+
+        // Acknowledge receipt to Razorpay
+        res.status(200).json({ status: 'ok' });
+
+    } catch (error) {
+        console.error("Webhook Error:", error);
+        res.status(500).json({ error: "Webhook processing failed" });
+    }
+};
