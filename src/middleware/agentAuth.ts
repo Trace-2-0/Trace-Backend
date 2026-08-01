@@ -24,7 +24,7 @@ export async function agentAuth(
     const user = await prisma.user.findUnique({
       where: { agentToken: token },
       include: {
-        company: { select: { id: true, isActive: true } },
+        company: { select: { id: true, isActive: true, plan: true, trialEndsAt: true } },
       },
     });
 
@@ -40,6 +40,14 @@ export async function agentAuth(
 
     if (!user.company.isActive) {
       res.status(403).json({ error: 'Company account is suspended' });
+      return;
+    }
+
+    if (user.company.plan === 'trial' && new Date() > user.company.trialEndsAt) {
+      res.status(403).json({ 
+        error: 'Company trial has expired. Desktop agent sync paused until company upgrades.',
+        code: 'TRIAL_EXPIRED'
+      });
       return;
     }
 

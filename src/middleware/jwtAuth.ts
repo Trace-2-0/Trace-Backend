@@ -33,14 +33,23 @@ export async function jwtAuth(
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
 
-    // Verify company is still active
+    // Verify company is still active and trial is not expired
     const company = await prisma.company.findUnique({
       where: { id: decoded.companyId },
-      select: { isActive: true },
+      select: { isActive: true, plan: true, trialEndsAt: true },
     });
 
     if (!company || !company.isActive) {
       res.status(403).json({ error: 'Company account is suspended' });
+      return;
+    }
+
+    // Trial Expiration Guard
+    if (company.plan === 'trial' && new Date() > company.trialEndsAt) {
+      res.status(403).json({ 
+        error: 'Company trial has expired. Please upgrade your plan to continue using Trace.',
+        code: 'TRIAL_EXPIRED'
+      });
       return;
     }
 

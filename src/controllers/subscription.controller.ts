@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { createRazorPaySubscription } from '../services/subscription.service';
-
+import crypto from 'crypto';
+import { handleSubscriptionSuccess } from '../services/subscription.service';
 export const checkout = async (req: Request, res: Response) => {
     try {
         const { planType } = req.body;
@@ -31,8 +32,7 @@ export const checkout = async (req: Request, res: Response) => {
     }
 };
 
-import crypto from 'crypto';
-import { handleSubscriptionSuccess } from '../services/subscription.service';
+
 
 export const webhook = async (req: Request, res: Response) => {
     try {
