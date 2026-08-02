@@ -14,6 +14,7 @@ import {
   deleteUserPermanent,
   regenerateToken,
 } from '../controllers/user.controller';
+import { checkEmployeeLimit } from '../middleware/subscriptionAuth';
 
 const router = Router();
 router.use(jwtAuth);
@@ -86,6 +87,7 @@ router.post(
   '/',
   requireRole('admin'),
   validate({ body: createUserSchema }),
+  checkEmployeeLimit,
   createUser
 );
 

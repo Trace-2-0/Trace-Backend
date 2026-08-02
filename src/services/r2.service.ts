@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 
@@ -26,7 +26,7 @@ import sharp from 'sharp';
 //     5. Presigned URL not applicable — admin generates share link from their drive
 // ─────────────────────────────────────────────────────────────────────────────
 
-const R2_ENDPOINT   = process.env.R2_ENDPOINT   || '';  // https://<accountId>.r2.cloudflarestorage.com
+const R2_ENDPOINT   = process.env.R2_ENDPOINT   || '';  
 const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY  || '';
 const R2_SECRET_KEY = process.env.R2_SECRET_KEY  || '';
 const R2_BUCKET     = process.env.R2_BUCKET_NAME || '';
@@ -35,8 +35,7 @@ const R2_REGION     = 'auto'; // R2 always uses 'auto'
 // Presigned URL validity — 1 hour; dashboard caches until this expires
 const PRESIGNED_URL_EXPIRY_SECS = 3600;
 
-// Compression — WebP at quality 60 is visually fine for monitoring screenshots
-// Typical PNG screenshot (~800 KB) → WebP (~80–150 KB), 80–90% reduction
+
 const WEBP_QUALITY = 60;
 
 function isR2Configured(): boolean {
@@ -54,18 +53,14 @@ function createR2Client(): S3Client {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// compressToWebP
-// Converts any image buffer (PNG, JPEG, etc.) to WebP at quality 60.
-// Falls back to original buffer if sharp fails.
-// ─────────────────────────────────────────────────────────────────────────────
+// webp conversion
 export async function compressToWebP(inputBuffer: Buffer): Promise<Buffer> {
   try {
     return await sharp(inputBuffer)
       .webp({ quality: WEBP_QUALITY, effort: 4 })
       .toBuffer();
   } catch (err: any) {
-    console.warn('[R2] sharp compression failed, using original buffer:', err.message);
+    console.warn('sharp compression failed, using original buffer:', err.message);
     return inputBuffer;
   }
 }
@@ -137,6 +132,31 @@ export async function getPresignedUrl(storageKey: string): Promise<string> {
   });
 
   return getSignedUrl(client, command, { expiresIn: PRESIGNED_URL_EXPIRY_SECS });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deleteMultipleFromR2
+// Bulk deletes a list of storage keys from R2 bucket.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function deleteMultipleFromR2(storageKeys: string[]): Promise<void> {
+  if (!isR2Configured() || storageKeys.length === 0) return;
+
+  const client = createR2Client();
+  // AWS S3 DeleteObjects supports max 1000 keys per request
+  const chunkSize = 1000;
+  for (let i = 0; i < storageKeys.length; i += chunkSize) {
+    const chunk = storageKeys.slice(i, i + chunkSize);
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: R2_BUCKET,
+        Delete: {
+          Objects: chunk.map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      })
+    );
+  }
+  console.log(`[R2 Cleanup] Successfully purged ${storageKeys.length} files from R2`);
 }
 
 export { isR2Configured, PRESIGNED_URL_EXPIRY_SECS };

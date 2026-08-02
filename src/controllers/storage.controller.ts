@@ -2,11 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { getPresignedUrl, isR2Configured, PRESIGNED_URL_EXPIRY_SECS } from '../services/r2.service';
 
-// ────────────────────────────────────────────────────────────
-// GET /api/storage/screenshot/:screenshotId/url
-// Returns a 1-hour pre-signed R2 URL for a screenshot.
-// Dashboard should cache using the `expiresAt` field.
-// ────────────────────────────────────────────────────────────
+
 export async function getScreenshotUrl(req: Request, res: Response) {
   const { companyId } = req.user!;
   const screenshotId = req.params.screenshotId as string;
@@ -47,10 +43,7 @@ export async function getScreenshotUrl(req: Request, res: Response) {
   });
 }
 
-// ────────────────────────────────────────────────────────────
-// GET /api/storage/status
-// Returns current storage config status (no credentials exposed).
-// ────────────────────────────────────────────────────────────
+
 export async function getStorageStatus(_req: Request, res: Response) {
   res.json({
     r2: {

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { jwtAuth, requireRole } from '../middleware/jwtAuth';
 import { validate } from '../middleware/validate';
 import { updateCompanySchema } from '../validators/schemas';
-import { getCompany, updateCompany } from '../controllers/company.controller';
+import { getCompany, updateCompany, getDashboardStats } from '../controllers/company.controller';
 
 const router = Router();
 router.use(jwtAuth);
@@ -49,5 +49,22 @@ router.patch(
   validate({ body: updateCompanySchema }),
   updateCompany
 );
+
+// ────────────────────────────────────────────────────────────
+// GET /api/company/dashboard/stats
+// ────────────────────────────────────────────────────────────
+/**
+ * @openapi
+ * /api/company/dashboard/stats:
+ *   get:
+ *     tags: [Company]
+ *     summary: Aggregated stats for the admin dashboard
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard stats
+ */
+router.get('/dashboard/stats', requireRole('admin'), getDashboardStats);
 
 export default router;

@@ -14,6 +14,7 @@ export async function listUsers(req: Request, res: Response) {
   const where: any = { companyId };
   if (teamId) where.teamId = teamId;
   if (role) where.role = role;
+  else where.role = { not: 'admin' };
   if (active !== undefined) where.isActive = active === 'true';
 
   const users = await prisma.user.findMany({

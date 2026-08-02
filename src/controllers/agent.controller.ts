@@ -548,13 +548,49 @@ export async function disconnectIntent(req: Request, res: Response) {
     ? new Date(disconnectedAt)
     : new Date();
 
-  await prisma.shift.update({
-    where: { id: activeShift.id },
-    data: {
-      disconnectAt: disconnectTime,
-      checkoutType: reason === 'system_shutdown' ? 'shutdown' : 'powercut',
-    },
-  });
+  if (reason === 'manual_quit') {
+    // End any active break first
+    const activeBreak = await prisma.break.findFirst({
+      where: { shiftId: activeShift.id, endTime: null },
+    });
+    if (activeBreak) {
+      const breakDuration = Math.floor(
+        (disconnectTime.getTime() - activeBreak.startTime.getTime()) / 1000
+      );
+      await prisma.break.update({
+        where: { id: activeBreak.id },
+        data: { endTime: disconnectTime, durationSecs: Math.max(0, breakDuration) },
+      });
+    }
+
+    // Update shift with end time
+    await prisma.shift.update({
+      where: { id: activeShift.id },
+      data: {
+        endTime: disconnectTime,
+        checkoutType: 'manual_quit',
+      },
+    });
+
+    const updatedShift = await computeShiftTotals(activeShift.id);
+
+    sseManager.broadcast(companyId, 'shift.clock_out', {
+      userId,
+      shiftId: activeShift.id,
+      endTime: disconnectTime,
+      checkoutType: 'manual_quit',
+      totalWorkSecs: updatedShift?.totalWorkSecs,
+      totalActiveSecs: updatedShift?.totalActiveSecs,
+    });
+  } else {
+    await prisma.shift.update({
+      where: { id: activeShift.id },
+      data: {
+        disconnectAt: disconnectTime,
+        checkoutType: reason === 'system_shutdown' ? 'shutdown' : 'powercut',
+      },
+    });
+  }
 
   logAudit({
     companyId,

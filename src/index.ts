@@ -5,12 +5,9 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import swaggerJsdoc from 'swagger-jsdoc';
-import swaggerUi from 'swagger-ui-express';
-import path from 'path';
-import fs from 'fs';
 
 import { env } from './config/env';
+import { setupSwagger } from './config/swagger';
 import { errorHandler } from './middleware/errorHandler';
 
 // Import routes
@@ -19,11 +16,14 @@ import agentRoutes from './routes/agent.routes';
 import companyRoutes from './routes/company.routes';
 import teamRoutes from './routes/team.routes';
 import userRoutes from './routes/user.routes';
+import subscriptionRoutes from './routes/subscription.routes';
+import superadminRoutes from './routes/superadmin.routes';
 import settingsRoutes from './routes/settings.routes';
 import appTagRoutes from './routes/appTag.routes';
 import sseRoutes from './routes/sse.routes';
 import storageRoutes from './routes/storage.routes';
-
+import { startShiftSweep } from './cron/shiftSweep';
+import { initRetentionSweepCron } from './cron/retentionSweep';
 
 // ─── Types ───────────────────────────────────────────────────
 import './types';
@@ -52,59 +52,8 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const rawSchema = fs.readFileSync(path.join(__dirname, 'schemas', 'json-schema.json'), 'utf-8');
-const fixedSchema = rawSchema.replace(/#\/definitions\//g, '#/components/schemas/');
-const prismaModels = JSON.parse(fixedSchema).definitions;
-
-// ─── Swagger ─────────────────────────────────────────────────
-const swaggerSpec = swaggerJsdoc({
-  definition: {
-    openapi: '3.0.0',
-    info: {
-      title: 'Trace 1.0 API',
-      version: '1.0.0',
-      description:
-        'Backend API for Trace 1.0 — Desktop Agent communication, shift management, app tracking, and more.',
-    },
-    servers: [
-      {
-        url: `http://localhost:${env.PORT}`,
-        description: 'Local dev server',
-      },
-    ],
-    components: {
-      schemas: prismaModels,
-      securitySchemes: {
-        AgentToken: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'x-agent-token',
-          description: 'Electron desktop agent token (from User.agentToken)',
-        },
-        BearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          description: 'JWT token from /api/auth/*/login',
-        },
-      },
-    },
-  },
-  apis: [
-    path.join(__dirname, 'routes', '*.ts'),
-    path.join(__dirname, 'routes', '*.js'),
-  ],
-});
-
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'Trace 1.0 — API Docs',
-}));
-
-// Expose raw spec
-app.get('/api/docs.json', (_req, res) => {
-  res.json(swaggerSpec);
-});
+// ─── Swagger Documentation ───────────────────────────────────
+setupSwagger(app);
 
 // ─── Health check ────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -125,7 +74,8 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/app-tags', appTagRoutes);
 app.use('/api/sse', sseRoutes);
 app.use('/api/storage', storageRoutes);
-
+app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/superadmin', superadminRoutes);
 
 // ─── 404 handler ─────────────────────────────────────────────
 app.use((_req, res) => {
@@ -134,6 +84,10 @@ app.use((_req, res) => {
 
 // ─── Global error handler ────────────────────────────────────
 app.use(errorHandler);
+
+// Start background cron jobs
+startShiftSweep();
+initRetentionSweepCron();
 
 // ─── Start server ────────────────────────────────────────────
 app.listen(env.PORT, () => {
