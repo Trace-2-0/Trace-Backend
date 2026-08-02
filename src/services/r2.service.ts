@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import sharp from 'sharp';
 
@@ -132,6 +132,31 @@ export async function getPresignedUrl(storageKey: string): Promise<string> {
   });
 
   return getSignedUrl(client, command, { expiresIn: PRESIGNED_URL_EXPIRY_SECS });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deleteMultipleFromR2
+// Bulk deletes a list of storage keys from R2 bucket.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function deleteMultipleFromR2(storageKeys: string[]): Promise<void> {
+  if (!isR2Configured() || storageKeys.length === 0) return;
+
+  const client = createR2Client();
+  // AWS S3 DeleteObjects supports max 1000 keys per request
+  const chunkSize = 1000;
+  for (let i = 0; i < storageKeys.length; i += chunkSize) {
+    const chunk = storageKeys.slice(i, i + chunkSize);
+    await client.send(
+      new DeleteObjectsCommand({
+        Bucket: R2_BUCKET,
+        Delete: {
+          Objects: chunk.map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      })
+    );
+  }
+  console.log(`[R2 Cleanup] Successfully purged ${storageKeys.length} files from R2`);
 }
 
 export { isR2Configured, PRESIGNED_URL_EXPIRY_SECS };

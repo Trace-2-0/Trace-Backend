@@ -23,6 +23,7 @@ import appTagRoutes from './routes/appTag.routes';
 import sseRoutes from './routes/sse.routes';
 import storageRoutes from './routes/storage.routes';
 import { startShiftSweep } from './cron/shiftSweep';
+import { initRetentionSweepCron } from './cron/retentionSweep';
 
 // ─── Types ───────────────────────────────────────────────────
 import './types';
@@ -84,8 +85,9 @@ app.use((_req, res) => {
 // ─── Global error handler ────────────────────────────────────
 app.use(errorHandler);
 
-// Start the background cron job for stale shifts
+// Start background cron jobs
 startShiftSweep();
+initRetentionSweepCron();
 
 // ─── Start server ────────────────────────────────────────────
 app.listen(env.PORT, () => {
