@@ -5,9 +5,27 @@ import path from 'path';
 import fs from 'fs';
 import { env } from './env';
 
-const rawSchema = fs.readFileSync(path.join(__dirname, '..', 'schemas', 'json-schema.json'), 'utf-8');
-const fixedSchema = rawSchema.replace(/#\/definitions\//g, '#/components/schemas/');
-const prismaModels = JSON.parse(fixedSchema).definitions;
+// Safely locate json-schema.json across dev (src) and prod (dist) builds
+let prismaModels = {};
+const schemaPaths = [
+  path.join(__dirname, '..', 'schemas', 'json-schema.json'),
+  path.join(process.cwd(), 'src', 'schemas', 'json-schema.json'),
+  path.join(process.cwd(), 'dist', 'schemas', 'json-schema.json'),
+];
+
+for (const schemaPath of schemaPaths) {
+  if (fs.existsSync(schemaPath)) {
+    try {
+      const rawSchema = fs.readFileSync(schemaPath, 'utf-8');
+      const fixedSchema = rawSchema.replace(/#\/definitions\//g, '#/components/schemas/');
+      const parsed = JSON.parse(fixedSchema);
+      prismaModels = parsed.definitions || {};
+      break;
+    } catch (err) {
+      console.warn('[Swagger] Failed to parse JSON schema:', err);
+    }
+  }
+}
 
 export const swaggerSpec = swaggerJsdoc({
   definition: {
@@ -49,10 +67,14 @@ export const swaggerSpec = swaggerJsdoc({
 });
 
 export function setupSwagger(app: Express) {
-  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'Trace 1.0 — API Docs',
-  }));
+  app.use(
+    '/api/docs',
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec, {
+      customCss: '.swagger-ui .topbar { display: none }',
+      customSiteTitle: 'Trace 1.0 — API Docs',
+    })
+  );
 
   // Expose raw spec
   app.get('/api/docs.json', (_req, res) => {
