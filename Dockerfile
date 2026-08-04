@@ -36,9 +36,7 @@ COPY --from=builder /app/src/schemas ./src/schemas
 # Expose backend server port
 EXPOSE 4000
 
-# Healthcheck probe for container orchestrators
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:4000/api/health || exit 1
+ENV NODE_ENV=production
 
 # Command to launch production Express server
 CMD ["node", "dist/index.js"]
