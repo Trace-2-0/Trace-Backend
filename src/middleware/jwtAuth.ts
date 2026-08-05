@@ -33,6 +33,11 @@ export async function jwtAuth(
   try {
     const decoded = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
 
+    if (!decoded || !decoded.companyId) {
+      res.status(401).json({ error: 'Invalid token payload: missing company authentication' });
+      return;
+    }
+
     // Verify company is still active and trial is not expired
     const company = await prisma.company.findUnique({
       where: { id: decoded.companyId },
