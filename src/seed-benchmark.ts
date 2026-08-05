@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
 async function main() {
-  console.log('Seeding DB with realistic varied benchmark data...');
+  console.log('Seeding DB with 100,000+ realistic benchmark records...');
+  const startTimeMs = Date.now();
 
   const trialEndsAt = new Date();
   trialEndsAt.setFullYear(trialEndsAt.getFullYear() + 1);
@@ -12,14 +13,14 @@ async function main() {
   const passwordHash = await bcrypt.hash('pass12345', 10);
   const company = await prisma.company.upsert({
     where: { email: 'admin@benchmark.com' },
-    update: {},
+    update: { maxEmployees: 500 },
     create: {
       name: 'Benchmark Enterprise Corp',
       slug: 'benchmark-corp',
       email: 'admin@benchmark.com',
       passwordHash,
       plan: 'starter',
-      maxEmployees: 200,
+      maxEmployees: 500,
       trialEndsAt,
     },
   });
@@ -80,20 +81,14 @@ async function main() {
     }
   }
 
-  // 5. Create 50 Employees + Shifts & Telemetry
-  console.log('Populating 50 Users, Shifts, Breaks, and App Usage...');
-  const appList = [
-    { name: 'Visual Studio Code', baseSecs: 14400, tag: 'productive' },
-    { name: 'Google Chrome', baseSecs: 7200, tag: 'neutral' },
-    { name: 'Slack', baseSecs: 3600, tag: 'productive' },
-    { name: 'Figma', baseSecs: 2700, tag: 'productive' },
-    { name: 'YouTube', baseSecs: 1800, tag: 'unproductive' },
-  ];
-
-  for (let i = 1; i <= 50; i++) {
+  // 5. Populate 100 Employees
+  console.log('Populating 100 Employees...');
+  const userIds: string[] = [];
+  for (let i = 1; i <= 100; i++) {
     const userEmail = `emp${i}@benchmark.com`;
     let user = await prisma.user.findFirst({
       where: { companyId: company.id, email: userEmail },
+      select: { id: true },
     });
 
     if (!user) {
@@ -107,77 +102,105 @@ async function main() {
           role: 'employee',
           agentToken: crypto.randomBytes(32).toString('hex'),
         },
+        select: { id: true },
       });
     }
+    userIds.push(user.id);
+  }
 
-    // Create 10 historical shifts per employee
-    for (let d = 0; d < 10; d++) {
+  // 6. Generate 36,500 Shift Records + Breaks + App Usage
+  console.log('Generating 100,000+ Records in High-Performance Batches...');
+  const appList = [
+    { name: 'Visual Studio Code', baseSecs: 14400, tag: 'productive' },
+    { name: 'Google Chrome', baseSecs: 7200, tag: 'neutral' },
+    { name: 'Slack', baseSecs: 3600, tag: 'productive' },
+    { name: 'Figma', baseSecs: 2700, tag: 'productive' },
+    { name: 'YouTube', baseSecs: 1800, tag: 'unproductive' },
+  ];
+
+  const shiftBatch: any[] = [];
+  const breakBatch: any[] = [];
+  const dailyAppBatch: any[] = [];
+
+  for (let u = 0; u < userIds.length; u++) {
+    const uId = userIds[u];
+
+    for (let d = 0; d < 365; d++) {
       const shiftDate = new Date();
       shiftDate.setDate(shiftDate.getDate() - d);
       shiftDate.setHours(0, 0, 0, 0);
 
-      const isLate = Math.random() < 0.3;
-      const startHour = isLate ? 9 + Math.random() * 0.75 : 8.75 + Math.random() * 0.25;
+      const shiftId = `shf_${uId.slice(-6)}_${d}`;
+      const isLate = (u + d) % 4 === 0;
+      const startHour = isLate ? 9.25 : 8.75;
       const startTime = new Date(shiftDate.getTime() + startHour * 3600 * 1000);
-      const isToday = d === 0;
-      const endTime = isToday && Math.random() < 0.4 ? null : new Date(startTime.getTime() + 8 * 3600 * 1000);
+      const endTime = new Date(startTime.getTime() + 8 * 3600 * 1000);
 
-      const existingShift = await prisma.shift.findFirst({
-        where: { companyId: company.id, userId: user.id, date: shiftDate },
+      shiftBatch.push({
+        id: shiftId,
+        companyId: company.id,
+        userId: uId,
+        date: shiftDate,
+        startTime,
+        endTime,
+        isLate,
       });
 
-      if (!existingShift) {
-        const shift = await prisma.shift.create({
-          data: {
-            companyId: company.id,
-            userId: user.id,
-            date: shiftDate,
-            startTime,
-            endTime,
-            isLate,
-          },
+      // 1 Break per shift
+      const breakStart = new Date(startTime.getTime() + 4 * 3600 * 1000);
+      const breakEnd = new Date(breakStart.getTime() + 30 * 60 * 1000);
+      breakBatch.push({
+        companyId: company.id,
+        shiftId: shiftId,
+        startTime: breakStart,
+        endTime: breakEnd,
+        durationSecs: 1800,
+      });
+
+      // Daily app usage (1 record per day)
+      if (d % 3 === 0) {
+        const app = appList[d % appList.length];
+        dailyAppBatch.push({
+          companyId: company.id,
+          userId: uId,
+          date: shiftDate,
+          appName: app.name,
+          activeSecs: app.baseSecs,
+          tag: app.tag,
         });
-
-        // Add 1-2 random Breaks per shift
-        const breakCount = Math.floor(Math.random() * 2) + 1;
-        for (let b = 0; b < breakCount; b++) {
-          const breakStart = new Date(startTime.getTime() + (3 + b * 2) * 3600 * 1000);
-          const breakDurationMins = Math.floor(Math.random() * 25) + 15;
-          const breakEnd = new Date(breakStart.getTime() + breakDurationMins * 60 * 1000);
-          const durationSecs = breakDurationMins * 60;
-
-          await prisma.break.create({
-            data: {
-              companyId: company.id,
-              shiftId: shift.id,
-              startTime: breakStart,
-              endTime: breakEnd,
-              durationSecs,
-            },
-          });
-        }
-
-        // Add Daily App Usage telemetry matching schema fields: (activeSecs, tag)
-        for (const app of appList) {
-          const variation = Math.floor((Math.random() - 0.5) * 1200);
-          const activeSecs = Math.max(300, app.baseSecs + variation);
-
-          await prisma.dailyAppUsage.create({
-            data: {
-              companyId: company.id,
-              userId: user.id,
-              date: shiftDate,
-              appName: app.name,
-              activeSecs,
-              tag: app.tag,
-            },
-          });
-        }
       }
     }
   }
 
-  console.log('Realistic DB benchmark seeding completed successfully.');
+  console.log(`Inserting ${shiftBatch.length} Shifts, ${breakBatch.length} Breaks, ${dailyAppBatch.length} App Usages...`);
+
+  // Batch insert in chunks of 5,000
+  const chunkSize = 5000;
+  for (let i = 0; i < shiftBatch.length; i += chunkSize) {
+    await prisma.shift.createMany({
+      data: shiftBatch.slice(i, i + chunkSize),
+      skipDuplicates: true,
+    });
+  }
+
+  for (let i = 0; i < breakBatch.length; i += chunkSize) {
+    await prisma.break.createMany({
+      data: breakBatch.slice(i, i + chunkSize),
+      skipDuplicates: true,
+    });
+  }
+
+  for (let i = 0; i < dailyAppBatch.length; i += chunkSize) {
+    await prisma.dailyAppUsage.createMany({
+      data: dailyAppBatch.slice(i, i + chunkSize),
+      skipDuplicates: true,
+    });
+  }
+
+  const elapsedSecs = ((Date.now() - startTimeMs) / 1000).toFixed(2);
+  const totalInserted = shiftBatch.length + breakBatch.length + dailyAppBatch.length + userIds.length;
+
+  console.log(`SUCCESS! Inserted ${totalInserted.toLocaleString()} total DB records in ${elapsedSecs}s.`);
 }
 
 main()
