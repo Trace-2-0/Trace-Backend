@@ -6,6 +6,8 @@ import { sseManager } from '../lib/sse';
 import { logAudit } from '../services/audit.service';
 import { getActiveShift, computeShiftTotals } from '../services/shift.service';
 import { uploadToR2, compressToWebP, buildStorageKey, isR2Configured } from '../services/r2.service';
+import { addScreenshotJob } from '../queues/screenshotQueue';
+import { redis } from '../lib/redis';
 
 // ────────────────────────────────────────────────────────────
 // POST /api/agent/clock-in
@@ -142,25 +144,40 @@ export async function clockOut(req: Request, res: Response) {
 export async function heartbeat(req: Request, res: Response) {
   const { userId, companyId } = req.agentUser!;
 
-  const activeShift = await getActiveShift(userId, companyId);
-  if (!activeShift) {
-    res.status(400).json({ error: 'No active shift' });
-    return;
+  // 1. Check Redis RAM for active shift ID (< 1ms lookup)
+  let shiftId: string | null = null;
+  try {
+    shiftId = await redis.get(`active_shift:${userId}`);
+  } catch (err: any) {
+    // Fallback to DB if Redis is unreachable
+  }
+
+  // 2. If missing in Redis, query DB and populate Redis
+  if (!shiftId) {
+    const activeShift = await getActiveShift(userId, companyId);
+    if (!activeShift) {
+      res.status(400).json({ error: 'No active shift' });
+      return;
+    }
+    shiftId = activeShift.id;
+    try {
+      await redis.set(`active_shift:${userId}`, shiftId);
+    } catch (err: any) {}
   }
 
   const now = new Date();
   await prisma.shift.update({
-    where: { id: activeShift.id },
+    where: { id: shiftId },
     data: { lastHeartbeatAt: now },
   });
 
   sseManager.broadcast(companyId, 'heartbeat', {
     userId,
-    shiftId: activeShift.id,
+    shiftId,
     timestamp: now,
   });
 
-  res.json({ ok: true, shiftId: activeShift.id, timestamp: now });
+  res.json({ ok: true, shiftId, timestamp: now });
 }
 
 // ────────────────────────────────────────────────────────────
@@ -328,92 +345,38 @@ export async function reportIdle(req: Request, res: Response) {
 // ────────────────────────────────────────────────────────────
 export async function uploadScreenshot(req: Request, res: Response) {
   const { userId, companyId } = req.agentUser!;
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  const userName = user?.name || userId;
   const { imageBase64, capturedAt } = req.body;
 
   const activeShift = await getActiveShift(userId, companyId);
   if (!activeShift) {
-    console.log(`\n[Backend] Screenshot rejected for user: ${userName} (no active shift)`);
     res.status(400).json({ error: 'No active shift' });
     return;
   }
 
-  const capturedDate = capturedAt ? new Date(capturedAt) : new Date();
-  const rawBuffer = Buffer.from(imageBase64, 'base64');
-
-  let storageKey: string;
-  let storageType: string;
-  let fileSizeBytes: number;
-
-  if (isR2Configured()) {
-    // ── R2 path: compress to WebP, upload to global bucket ──
-    try {
-      const result = await uploadToR2(companyId, userId, capturedDate, rawBuffer);
-      storageKey = result.storageKey;
-      storageType = 'r2';
-      fileSizeBytes = result.fileSizeBytes;
-    } catch (r2Err: any) {
-      console.error(`[Backend] R2 upload failed for ${userName}:`, r2Err.message);
-      res.status(502).json({ error: 'Storage upload failed', detail: r2Err.message });
-      return;
-    }
-  } else {
-    // ── Local fallback: compress to WebP, save to uploads/ ──
-    console.warn('[Backend] R2 not configured — falling back to local disk storage');
-    const webpBuffer = await compressToWebP(rawBuffer);
-    storageKey = buildStorageKey(companyId, userId, capturedDate);
-    storageType = 'local';
-    fileSizeBytes = webpBuffer.length;
-
-    const dateStr = capturedDate.toISOString().split('T')[0];
-    const uploadDir = path.join(process.cwd(), 'uploads', companyId, userId, dateStr);
-    await mkdir(uploadDir, { recursive: true });
-    const timeStr = capturedDate.toISOString().split('T')[1].replace(/[:.]/g, '').substring(0, 6);
-    await writeFile(path.join(uploadDir, `${timeStr}.webp`), webpBuffer);
-  }
-
-  const screenshot = await prisma.screenshot.create({
-    data: {
-      companyId,
-      userId,
-      shiftId: activeShift.id,
-      capturedAt: capturedDate,
-      storageType,
-      storageKey,
-      fileSizeBytes,
-      status: 'ok',
-    },
-  });
-
-  sseManager.broadcast(companyId, 'screenshot.captured', {
+  // Offload heavy image decoding, compression, and R2/disk upload to BullMQ Redis Queue
+  const job = await addScreenshotJob({
+    companyId,
     userId,
-    screenshotId: screenshot.id,
-    capturedAt: capturedDate,
-    fileSizeBytes,
-    storageType,
+    shiftId: activeShift.id,
+    base64Image: imageBase64,
+    timestamp: capturedAt || new Date().toISOString(),
   });
 
+  // Return HTTP 202 Accepted immediately in < 5ms
+  res.status(202).json({
+    message: 'Screenshot queued for background processing',
+    jobId: job.id,
+    shiftId: activeShift.id,
+  });
   logAudit({
     companyId,
     actorId: userId,
     actorType: 'agent',
-    action: 'screenshot.captured',
-    targetId: screenshot.id,
-    targetType: 'screenshot',
-    meta: { storageType, fileSizeBytes },
+    action: 'screenshot.queued',
+    targetId: job.id || 'job',
+    targetType: 'screenshot_job',
+    meta: { jobId: job.id },
   });
-
-  res.status(201).json({
-    screenshot: {
-      id: screenshot.id,
-      storageKey: screenshot.storageKey,
-      capturedAt: screenshot.capturedAt,
-      fileSizeBytes: screenshot.fileSizeBytes,
-      storageType,
-    },
-  });
-  console.log(`\n[Backend] Screenshot saved (${storageType}) for user: ${userName} — ${fileSizeBytes} bytes`);
 }
 
 // ────────────────────────────────────────────────────────────
