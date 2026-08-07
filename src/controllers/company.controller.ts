@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-
+import { redis } from '../lib/redis';
+import { logger } from '../config/logger';
 // ────────────────────────────────────────────────────────────
 // GET /api/company
 // ────────────────────────────────────────────────────────────
@@ -63,6 +64,22 @@ export async function updateCompany(req: Request, res: Response) {
 // ────────────────────────────────────────────────────────────
 export async function getDashboardStats(req: Request, res: Response) {
   const { companyId } = req.user!;
+  const dateStr = (req.query.date as string) || new Date().toISOString().split('T')[0];
+
+  // 1. Check Redis RAM Cache (Sub-15ms execution)
+  const cacheKey = `company:dashboard:stats:${companyId}:${dateStr}`;
+  try {
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      logger.info({ cacheKey }, '[Redis] Cache Hit on Dashboard Stats');
+      res.json(JSON.parse(cachedData));
+      return;
+    }
+    logger.info({ cacheKey }, '[Redis] Cache Miss on Dashboard Stats - Querying DB');
+  } catch (err: any) {
+    // If Redis fails, gracefully fall through to DB query
+    logger.error({ error: err.message, cacheKey }, '[Redis] Cache Error on Dashboard Stats');
+  }
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -128,7 +145,7 @@ export async function getDashboardStats(req: Request, res: Response) {
     };
   });
 
-  res.json({
+  const responsePayload = {
     totalEmployees: allUsers.length,
     activeNow,
     onBreak,
@@ -138,6 +155,15 @@ export async function getDashboardStats(req: Request, res: Response) {
     users: usersWithStatus,
     lateUsers,
     teams
-  });
+  };
+
+  // 2. Set Cache with 300 Seconds (5 Mins) TTL in Redis RAM
+  try {
+    await redis.setex(cacheKey, 300, JSON.stringify(responsePayload));
+  } catch (err: any) {
+    // Graceful Redis write error handling
+  }
+
+  res.json(responsePayload);
 }
 

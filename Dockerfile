@@ -1,11 +1,6 @@
-# ────────────────────────────────────────────────────────────
-# Trace 1.0 - Production Dockerfile for Express Node.js Backend
-# ────────────────────────────────────────────────────────────
-
-# Step 1: Build Stage
 FROM node:20-alpine AS builder
 
-# Install OpenSSL required by Prisma Query Engine on Alpine Linux
+
 RUN apk add --no-cache openssl
 
 WORKDIR /app

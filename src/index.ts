@@ -24,11 +24,17 @@ import sseRoutes from './routes/sse.routes';
 import storageRoutes from './routes/storage.routes';
 import { startShiftSweep } from './cron/shiftSweep';
 import { initRetentionSweepCron } from './cron/retentionSweep';
+import { screenshotWorker } from './workers/screenshotWorker'; // Background BullMQ Queue Worker
+
+import { httpLogger } from './config/logger';
 
 // ─── Types ───────────────────────────────────────────────────
 import './types';
 
 const app = express();
+
+// ─── Structured HTTP Logging ─────────────────────────────────
+app.use(httpLogger);
 
 // ─── Security ────────────────────────────────────────────────
 app.use(helmet({ contentSecurityPolicy: false }));
