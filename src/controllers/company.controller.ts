@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { redis } from '../lib/redis';
-
+import { logger } from '../config/logger';
 // ────────────────────────────────────────────────────────────
 // GET /api/company
 // ────────────────────────────────────────────────────────────
@@ -71,11 +71,14 @@ export async function getDashboardStats(req: Request, res: Response) {
   try {
     const cachedData = await redis.get(cacheKey);
     if (cachedData) {
+      logger.info({ cacheKey }, '[Redis] Cache Hit on Dashboard Stats');
       res.json(JSON.parse(cachedData));
       return;
     }
+    logger.info({ cacheKey }, '[Redis] Cache Miss on Dashboard Stats - Querying DB');
   } catch (err: any) {
     // If Redis fails, gracefully fall through to DB query
+    logger.error({ error: err.message, cacheKey }, '[Redis] Cache Error on Dashboard Stats');
   }
 
   const startOfDay = new Date();
