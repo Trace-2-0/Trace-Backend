@@ -22,6 +22,7 @@ import settingsRoutes from './routes/settings.routes';
 import appTagRoutes from './routes/appTag.routes';
 import sseRoutes from './routes/sse.routes';
 import storageRoutes from './routes/storage.routes';
+import usageRoutes from './routes/usage.routes';
 import { startShiftSweep } from './cron/shiftSweep';
 import { initRetentionSweepCron } from './cron/retentionSweep';
 import { screenshotWorker } from './workers/screenshotWorker'; // Background BullMQ Queue Worker
@@ -80,6 +81,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/app-tags', appTagRoutes);
 app.use('/api/sse', sseRoutes);
 app.use('/api/storage', storageRoutes);
+app.use('/api/usage', usageRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/superadmin', superadminRoutes);
 
