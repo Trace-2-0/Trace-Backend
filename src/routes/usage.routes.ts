@@ -60,7 +60,11 @@ router.get('/historical', requireRole('admin'), async (req: Request, res: Respon
       },
     });
 
-    const userMap = new Map<string, any>();
+    interface UserData {
+      user: { id: string; name: string };
+      appsMap: Map<string, number>;
+    }
+    const userMap = new Map<string, UserData>();
 
     usages.forEach((u) => {
       if (!userMap.has(u.userId)) {
@@ -69,7 +73,7 @@ router.get('/historical', requireRole('admin'), async (req: Request, res: Respon
           appsMap: new Map<string, number>(),
         });
       }
-      const userData = userMap.get(u.userId);
+      const userData = userMap.get(u.userId)!;
       const currentSecs = userData.appsMap.get(u.appName) || 0;
       userData.appsMap.set(u.appName, currentSecs + u.activeSecs);
     });
@@ -80,7 +84,7 @@ router.get('/historical', requireRole('admin'), async (req: Request, res: Respon
         seconds,
       }));
       // Sort apps by usage descending
-      apps.sort((a, b) => (b.seconds as number) - (a.seconds as number));
+      apps.sort((a, b) => b.seconds - a.seconds);
       return { user: u.user, apps };
     });
 
